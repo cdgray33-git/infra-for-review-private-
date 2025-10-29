@@ -1,0 +1,53 @@
+# Copy this to .env and edit secrets before running
+
+# Agent UI
+AGENT_UI_API_KEY=ReplaceWithAStrongKey
+OLLAMA_MODEL=llama3
+
+# PostgreSQL (DB) credentials
+POSTGRES_USER=n8n
+POSTGRES_PASSWORD=KWnrp30_0xAJA2_Hmrt-yQ
+POSTGRES_DB=n8n
+
+# n8n DB connection
+DB_TYPE=postgresdb
+DB_POSTGRESDB_HOST=n8n-db
+DB_POSTGRESDB_PORT=5432
+DB_POSTGRESDB_DATABASE=n8n
+DB_POSTGRESDB_USER=n8n
+DB_POSTGRESDB_PASSWORD=KWnrp30_0xAJA2_Hmrt-yQ
+
+# n8n UI basic auth (if used)
+N8N_BASIC_AUTH_ACTIVE=true
+N8N_BASIC_AUTH_USER=admin
+N8N_BASIC_AUTH_PASSWORD=!@#$918273645!@#$Gray
+
+# Mail assistant / Ollama config
+MAIL_ASSISTANT_API_KEY=Emdmailassistant1234!
+OLLAMA_MODEL=qwen3
+OLLAMA_HOST=http://ollama:11434
+FLOWISE_RUN_URL=http://flowise:3000/api/v1/flows/run
+
+# Ports & hosts
+MAIL_ASSISTANT_PORT=8002
+DCO_AGENT_PORT=8000
+OLLAMA_PUBLISH_PORT=11434
+REDIS_PUBLISH_PORT=6379
+FLOWISE_PORT=3000
+N8N_PORT=5678
+RQ_PROXY_PORT=9181
+PROM_PORT=9090
+GRAFANA_PORT=3000
+PORTAINER_PORT=9000
+
+# RQ dashboard credentials
+RQ_DASH_USER=admin
+RQ_DASH_PASS=!@#$918273645!@#$Gray
+
+# Optional UID/GID for host-mounted volumes (match the PUID/PGID used on host)
+PUID=1000
+PGID=1000
+
+# Runtime limits / controls
+MAX_CONCURRENT_LLMS=1
+MODEL_RAM_LIMIT_GB=32

@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  agent_ui:
+    build:
+      context: ./agent-ui
+      dockerfile: backend/Dockerfile
+    image: agent-ui:latest
+    ports:
+      - "8080:80"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - MAIL_ASSISTANT_URL=http://mail_assistant:8002
+      - DCO_AGENT_URL=http://dco_agent:8000
+      - PERSISTENT_DIR=/app/persistent
+      - AGENT_UI_API_KEY=${AGENT_UI_API_KEY:-changeme}
+    depends_on:
+      - mail_assistant
+      - dco_agent
+      - ollama

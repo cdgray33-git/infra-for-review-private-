@@ -1,0 +1,19 @@
+services:
+  agent_ui:
+    environment:
+      - MAIL_ASSISTANT_URL=${MAIL_ASSISTANT_URL:-http://mail_assistant:8002}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - PERSISTENT_DIR=${PERSISTENT_DIR:-/app/persistent}
+      - AGENT_UI_API_KEY=${AGENT_UI_API_KEY:-changeme}
+      - ANSIBLE_DIR=${ANSIBLE_DIR:-/app/ansible}
+      - ALLOWED_SERVER_ACTIONS=${ALLOWED_SERVER_ACTIONS:-deploy,restart,update}
+      - SERVER_ACTIONS_DRY_RUN=${SERVER_ACTIONS_DRY_RUN:-true}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    volumes:
+      - ./persistent:/app/persistent:ro
+      - ./ansible:/app/ansible:ro
+      - ./:/app:ro
+    ports:
+      - "8085:80"
+    restart: unless-stopped

@@ -1,0 +1,24 @@
+services:
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:v0.6.34
+    container_name: openwebui
+    restart: unless-stopped
+    ports:
+      - "3033:8080"
+    environment:
+      - OPENWEBUI_PORT=3033
+      - MODEL_DIR=/models
+    volumes:
+      - openwebui_models:/models
+      - ./openwebui/config:/config:rw
+      - ./openwebui/models:/models:rw
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  openwebui_models:
+    driver: local
+
+

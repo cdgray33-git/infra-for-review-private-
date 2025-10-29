@@ -1,0 +1,6 @@
+services:
+  agent_ui:
+    # Replace any volumes for agent_ui with an empty list so host binds won't
+    # overwrite /app in the container at runtime. This is intentionally minimal
+    # and reversible (remove the file to restore previous behavior).
+    volumes: []

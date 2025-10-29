@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LangChain Agent UI (MVP)</title>
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif;margin:1rem}
+      #messages{border:1px solid #ddd;padding:1rem;height:50vh;overflow:auto}
+      .msg{margin-bottom:8px}
+      .bot{color:#111}
+      .user{color:#0366d6}
+      .meta{color:#666;font-size:0.9rem}
+    </style>
+  </head>
+  <body>
+    <h1>LangChain Agent UI</h1>
+    <div>
+      <label>API Key: <input id="apiKey" value="changeme" /></label>
+      <label>Tool selection (optional):
+        <select id="tool">
+          <option value="agent">Agent (automatic tool use)</option>
+          <option value="mail_run">Mail Assistant: run</option>
+          <option value="mail_fetch_output">Mail Assistant: fetch output</option>
+          <option value="dco_health">DCO: health</option>
+          <option value="server_action">Server: action</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="messages"></div>
+
+    <div>
+      <input id="text" style="width:70%" placeholder="Enter your message or agent id for mail_run" />
+      <button id="send">Send</button>
+    </div>
+
+    <script>
+      const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/chat';
+      const ws = new WebSocket(wsUrl);
+      const messages = document.getElementById('messages');
+
+      function push(msg, cls = 'bot') {
+        const el = document.createElement('div');
+        el.className = 'msg ' + cls;
+        el.innerText = msg;
+        messages.appendChild(el);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      ws.addEventListener('open', () => {
+        const apiKey = document.getElementById('apiKey').value;
+        ws.send(JSON.stringify({ api_key: apiKey }));
+        push('WebSocket connected', 'meta');
+      });
+
+      ws.addEventListener('message', (ev) => {
+        const data = JSON.parse(ev.data);
+        if (data.type === 'info' || data.type === 'meta') {
+          push(`[info] ${data.payload}`, 'meta');
+        } else if (data.type === 'tool') {
+          push(`[tool ${data.payload.tool}] ${JSON.stringify(data.payload.result)}`, 'meta');
+        } else if (data.type === 'result') {
+          push(String(data.payload), 'bot');
+        } else if (data.type === 'error') {
+          push(`[error] ${data.payload}`, 'bot');
+        } else {
+          push(JSON.stringify(data), 'bot');
+        }
+      });
+
+      document.getElementById('send').addEventListener('click', () => {
+        const text = document.getElementById('text').value;
+        const tool = document.getElementById('tool').value;
+        let payload;
+        if (tool === 'agent' || tool === 'agent_auto') {
+          payload = { input: text };
+        } else if (tool === 'mail_run') {
+          payload = { input: `Run mail agent ${text}` , mail_run: {agent_id: text} };
+          // The backend agent will inspect text and choose tools; for explicit tool calls the UI also can send input text.
+        } else {
+          payload = { input: text };
+        }
+        ws.send(JSON.stringify(payload));
+        push(text, 'user');
+        document.getElementById('text').value = '';
+      });
+    </script>
+  </body>
+</html>

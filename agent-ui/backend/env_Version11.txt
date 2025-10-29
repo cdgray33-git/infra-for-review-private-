@@ -1,0 +1,3 @@
+# Agent UI
+AGENT_UI_API_KEY=S#4FFGRthreTRT%#$#%
+OLLAMA_MODEL=llama3

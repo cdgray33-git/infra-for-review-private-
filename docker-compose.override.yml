@@ -1,0 +1,4 @@
+services:
+  agent_ui:
+    # Replace any runtime volumes with an empty list so the image /app is used.
+    volumes: []
