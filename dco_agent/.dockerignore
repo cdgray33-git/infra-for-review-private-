@@ -1,0 +1,19 @@
+# dco_agent context-specific .dockerignore - keep build context minimal
+data
+data/**
+models
+llama_models
+openwebui_models
+*.gguf
+*.safetensors
+*.ckpt
+*.bin
+*.tar.gz
+*.zip
+node_modules
+venv
+__pycache__
+*.pyc
+.git
+.env
+*.log
