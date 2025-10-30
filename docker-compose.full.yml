@@ -1,0 +1,364 @@
+version: "3.9"
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PUBLISH_PORT:-11434}:11434"
+    volumes:
+      - /mnt/llama_models/ollama_models:/models:rw
+      - ollama-data:/root/.ollama:rw
+    env_file:
+      - ./config/ollama.env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:11434/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ai_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PUBLISH_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data:rw
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ai_network
+
+  rq-dashboard:
+    image: python:3.11-slim
+    container_name: rq_dashboard
+    restart: unless-stopped
+    command: sh -c "pip install --no-cache-dir rq-dashboard && rq-dashboard --host 0.0.0.0 --port 9181 --redis-url redis://redis:6379"
+    networks:
+      - ai_network
+    depends_on:
+      - redis
+
+  rq-proxy:
+    build:
+      context: ./rq-proxy
+      dockerfile: Dockerfile
+    image: rq-proxy:latest
+    container_name: rq_proxy
+    restart: unless-stopped
+    ports:
+      - "${RQ_PROXY_PORT:-9181}:9181"
+    environment:
+      - RQ_DASH_USER=${RQ_DASH_USER:-}
+      - RQ_DASH_PASS=${RQ_DASH_PASS:-}
+    networks:
+      - ai_network
+    depends_on:
+      - rq-dashboard
+
+  flowise:
+    image: flowiseai/flowise:latest
+    container_name: flowise
+    restart: unless-stopped
+    ports:
+      - "${FLOWISE_PORT:-3000}:3000"
+    volumes:
+      - ./flowise:/flowise:rw
+      - /mnt/llama_models/flowise:/flowise/data:rw
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ai_network
+
+  mail_assistant:
+    build:
+      context: ./mail-assistant
+      dockerfile: Dockerfile
+    image: mail-assistant:latest
+    container_name: mail_assistant
+    restart: unless-stopped
+    environment:
+      - MAIL_ASSISTANT_API_KEY=${MAIL_ASSISTANT_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3}
+      - REDIS_URL=redis://redis:6379
+      - FLOWISE_RUN_URL=${FLOWISE_RUN_URL:-http://flowise:3000/api/v1/flows/run}
+      - PERSISTENT_DIR=/app/persistent
+      - MAX_CONCURRENT_LLMS=${MAX_CONCURRENT_LLMS:-1}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - ./mail-assistant/data:/data:rw
+      - ./persistent:/app/persistent:rw
+      - ./mail-assistant/tools:/app/tools:ro
+    ports:
+      - "${MAIL_ASSISTANT_PORT:-8002}:8002"
+    depends_on:
+      - ollama
+      - redis
+      - flowise
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ai_network
+
+  mail_assistant_worker:
+    image: mail-assistant:latest
+    container_name: mail_assistant_worker
+    command: rq worker default --url redis://redis:6379
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3}
+      - PERSISTENT_DIR=/app/persistent
+      - FLOWISE_RUN_URL=${FLOWISE_RUN_URL:-http://flowise:3000/api/v1/flows/run}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - ./mail-assistant:/app:rw
+      - ./persistent:/app/persistent:rw
+      - ./mail-assistant/tools:/app/tools:ro
+    depends_on:
+      - redis
+      - ollama
+      - flowise
+    networks:
+      - ai_network
+
+  dco_agent:
+    build:
+      context: ./dco_agent
+      dockerfile: Dockerfile
+      image: infra/dco_agent:local
+    container_name: dco_agent
+    restart: unless-stopped
+    env_file:
+      - ./config/agent.env
+    environment:
+      - MODEL_PATH=/data/app/qwen3_model
+      - MODEL_NAME=${MODEL_NAME:-Qwen/Qwen3-235B-A22B-Instruct}
+      - MODEL_FORMAT=${MODEL_FORMAT:-GGUF}
+      - QUANTIZATION=${QUANTIZATION:-q5_k_m.gguf}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - app-data:/data/app
+      - ./agent:/app/agent:rw
+      - ./ansible:/app/ansible:rw
+      - ./config/agent.env:/app/config/agent.env:ro
+    ports:
+      - "${DCO_AGENT_PORT:-8000}:8000"
+    depends_on:
+      - redis
+      - ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ai_network
+
+  server_config_agent:
+    build:
+      context: ./dco_agent
+      dockerfile: Dockerfile.server_config_agent
+    container_name: server_config_agent
+    restart: unless-stopped
+    volumes:
+      - app-data:/data/app
+    depends_on:
+      - redis
+      - ollama
+    networks:
+      - ai_network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "${PROM_PORT:-9090}:9090"
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: jupyter
+    volumes:
+      - jupyter-data:/home/jovyan/work
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.2
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "${ZOOKEEPER_PORT:-2181}:2181"
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.2
+    container_name: kafka
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    depends_on:
+      - zookeeper
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+  webui:
+    image: nginx:alpine
+    container_name: webui
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8080}:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - ai_network
+
+  agent_ui:
+    build:
+      context: ./agent-ui/backend
+      dockerfile: Dockerfile
+    image: agent-ui:latest
+    container_name: agent_ui
+    restart: unless-stopped
+    ports:
+      - "${AGENT_UI_PORT:-8082}:80"
+    networks:
+      - ai_network
+
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    env_file:
+      - ./config/vaultwarden.env
+    volumes:
+      - vw-data:/data
+    ports:
+      - "${VAULTWARDEN_PORT:-8081}:80"
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+  n8n-db:
+    image: postgres:15-alpine
+    container_name: n8n-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-n8n}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-n8n}
+      - POSTGRES_DB=${POSTGRES_DB:-n8n}
+    volumes:
+      - n8n-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n} -d ${POSTGRES_DB:-n8n} -h 127.0.0.1 -p ${DB_POSTGRESDB_PORT:-5432} || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ai_network
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    env_file:
+      - ./config/ui.env
+    environment:
+      - DB_TYPE=${DB_TYPE:-postgresdb}
+      - DB_POSTGRESDB_HOST=${DB_POSTGRESDB_HOST:-n8n-db}
+      - DB_POSTGRESDB_PORT=${DB_POSTGRESDB_PORT:-5432}
+      - DB_POSTGRESDB_DATABASE=${DB_POSTGRESDB_DATABASE:-n8n}
+      - DB_POSTGRESDB_USER=${DB_POSTGRESDB_USER:-n8n}
+      - DB_POSTGRESDB_PASSWORD=${DB_POSTGRESDB_PASSWORD:-n8n}
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-false}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-}
+    volumes:
+      - n8n-data:/root/.n8n
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    depends_on:
+      - n8n-db
+    networks:
+      - ai_network
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "${PORTAINER_PORT:-9000}:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer-data:/data
+    networks:
+      - ai_network
+
+volumes:
+  app-data:
+  ollama-data:
+  vw-data:
+  jupyter-data:
+  n8n-data:
+  n8n-db-data:
+  portainer-data:
+  openwebui_models:
+  redis-data:
+
+networks:
+  ai_network:
+    driver: bridge
